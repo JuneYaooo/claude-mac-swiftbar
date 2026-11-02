@@ -13,9 +13,11 @@ echo "   ✓ ~/CheckClaude/{claude-check,auto-timezone,deep-check}.sh"
 
 echo "══ 2/2 安装 SwiftBar 插件到 $PLUGIN_DIR ══"
 mkdir -p "$PLUGIN_DIR"
-cp "$DIR/swiftbar/claude-risk.10m.sh" "$PLUGIN_DIR/"
-chmod +x "$PLUGIN_DIR/claude-risk.10m.sh"
-echo "   ✓ $PLUGIN_DIR/claude-risk.10m.sh"
+for f in "$DIR"/swiftbar/*.sh; do
+  cp "$f" "$PLUGIN_DIR/"
+  chmod +x "$PLUGIN_DIR/$(basename "$f")"
+  echo "   ✓ $PLUGIN_DIR/$(basename "$f")"
+done
 
 echo "══ 完成 ══"
 echo "插件每 10 分钟刷新; 深度体检报告在 ~/Library/Application Support/CheckClaude/"
