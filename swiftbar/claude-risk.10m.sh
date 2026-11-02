@@ -20,6 +20,26 @@ p "$tmp/cn2"  https://myip.ipip.net &
 p "$tmp/trace" https://www.cloudflare.com/cdn-cgi/trace &
 pa "$tmp/api" -X POST https://api.anthropic.com/v1/messages -H "content-type: application/json" -d '{}' -w "%{http_code}" &
 p "$tmp/geo"  "http://ip-api.com/json/?fields=countryCode,city,isp,timezone" &
+# WebRTC 实测: 真发一个 STUN 包, 看映射出的公网地址是谁 (被 pf 拦=无响应=安全; =代理出口=安全; =其它公网IP=真泄漏)
+p_stun(){ python3 -c "
+import socket,struct,os,sys
+try:
+    tid=os.urandom(12)
+    msg=struct.pack('>HHI',0x0001,0,0x2112A442)+tid
+    s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.settimeout(3)
+    s.sendto(msg,('stun.l.google.com',19302))
+    data,_=s.recvfrom(2048)
+    i=20
+    while i+4<=len(data):
+        t,l=struct.unpack('>HH',data[i:i+4]); v=data[i+4:i+4+l]
+        if t==0x0020:
+            port=struct.unpack('>H',v[2:4])[0]^0x2112
+            ip=socket.inet_ntoa(struct.pack('>I',struct.unpack('>I',v[4:8])[0]^0x2112A442))
+            print(ip); sys.exit(0)
+        i+=4+l+(l%4)
+except Exception: pass
+" >"$tmp/stun" 2>/dev/null; }
+p_stun &
 wait
 
 is_ip() { [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; }
@@ -75,12 +95,35 @@ esac
 PF_OK=0
 [ "${PF_REFS:-0}" -ge 2 ] && PF_OK=1 || { SCORE=$((SCORE-3)); WARN=1; }
 
+# WebRTC 实测: STUN 映射 = 代理出口或被拦截 → 安全; = 其它公网 IP → 真泄漏 (确定性, 立即红)
+STUN_IP=$(grep -Eo "$IPRE" "$tmp/stun" 2>/dev/null | head -1)
+WEBRTC_STATE="blocked"
+if [ -n "$STUN_IP" ]; then
+  case "$STUN_IP" in
+    192.168.*|10.*|127.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*) WEBRTC_STATE="odd" ;;
+    *)
+      if { [ -n "$GFW_IP" ] && [ "$STUN_IP" = "$GFW_IP" ]; } || { [ -n "$INTL_IP" ] && [ "$STUN_IP" = "$INTL_IP" ]; }; then
+        WEBRTC_STATE="via_proxy"
+      elif [ -z "$GFW_IP" ] && [ -z "$INTL_IP" ]; then
+        WEBRTC_STATE="unknown"
+      else
+        WEBRTC_STATE="leak"
+      fi ;;
+  esac
+fi
+case "$WEBRTC_STATE" in
+  leak)    SCORE=$((SCORE-6)); CRIT=1; CERTAIN=1;;
+  odd)     ;;
+  unknown) ;;
+esac
+
 # ── 告警分级 ──
 # 确定性本地故障(sing-box挂/pf丢) = 真危险, 立即红, 不防抖;
 # 远端测量失败(网络瞬断) = 不确定, 防抖: 单次黄"待确认", 连续≥2次才红
 CERTAIN_FAIL=0
 [ "$SB_ON" != "1" ] && CERTAIN_FAIL=1
 [ "$PF_OK" != "1" ] && CERTAIN_FAIL=1
+[ "$WEBRTC_STATE" = "leak" ] && CERTAIN_FAIL=1
 DEBOUNCE=0
 if [ "$CRIT" = 1 ]; then
   FAIL_STREAK=$((FAIL_STREAK+1))
@@ -129,6 +172,13 @@ case "$DNS_OK" in
   *) echo "… DNS: 未检测到自定义解析器";;
 esac
 echo "$(tick $PF_OK) pf 防泄漏规则: $([ "$PF_OK" = 1 ] && echo 已加载 || echo 未加载!)"
+case "$WEBRTC_STATE" in
+  via_proxy) echo "✓ WebRTC 实测: STUN 经代理出口 ($STUN_IP)";;
+  blocked)   echo "✓ WebRTC 实测: STUN 已被拦截 (无泄漏通道)";;
+  leak)      echo "✗ WebRTC 泄漏: STUN 映射到 $STUN_IP (非代理出口!)";;
+  odd)       echo "… WebRTC 实测: STUN 映射到内网地址 $STUN_IP (不计分)";;
+  *)         echo "… WebRTC 实测: 出口未知无法比对 (不计分)";;
+esac
 echo "$(tick $SB_ON) sing-box: $([ "$SB_ON" = 1 ] && echo 运行中 || echo 未运行!)"
 echo "---"
 if [ -f "$REPORT" ]; then
