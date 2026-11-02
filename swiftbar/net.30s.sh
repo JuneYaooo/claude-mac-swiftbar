@@ -54,7 +54,7 @@ else
 fi
 
 # ── 输出 ──
-echo "↓$(fmt $DOWN) ↑$(fmt $UP) · ${IP:-…}"
+echo "📈↓$(fmt $DOWN) ↑$(fmt $UP) · ${IP:-…}"
 echo "---"
 echo "实时速率: ↓$(fmt $DOWN)/s ↑$(fmt $UP)/s"
 echo "出口 IP: ${IP:-探测中} ${GEO:+($GEO)}"
