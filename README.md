@@ -66,10 +66,19 @@ bash install.sh "/path/to/你的插件目录"   # 或显式指定
 
 - **sing-box TUN 全局**：所有流量（含国内）统一走美国住宅出口，消除三路分流；国内域名 DNS 经代理用 8.8.8.8 DoH 解析
 - **pf 防泄漏**：阻断 STUN 直连出站（UDP+TCP 3478/5349/19302），堵死 WebRTC 真实 IP 泄漏
+- **pf 断网保险（kill switch，可选加固）**：`claude-killswitch` 锚点阻断用户进程经物理网卡直连的 80/443 流量（TCP+UDP）——代理一旦断开，任何应用（含 Claude）都无法以真实 IP 发送网页数据，宁断不漏。局域网（RFC1918）与 root 进程（如 ToDesk）不受影响。锚点按机器的网卡名/用户名定制，不随 install.sh 安装
 - **系统 DNS**：1.1.1.1 / 8.8.8.8（被 TUN 劫持进隧道）
 - **时区/区域与出口对齐**：America/Los_Angeles + zh-Hans_US
 
 加固方法见 zzusec/CheckClaude 的 `--fix` 流程或其 README。
+
+### 风险插件的状态行
+
+```
+✓ 出口国家 / API / 三路一致 / 时区 / DNS / pf 防泄漏 / 断网保险 / sing-box
+```
+
+告警分级：**实测泄漏、sing-box 挂、pf 规则丢失 = 确定性故障，立即 🔴**；远端测量失败自动重试一次、连续两轮失败才降分（防网络瞬断误报）。
 
 ## 免责声明
 
