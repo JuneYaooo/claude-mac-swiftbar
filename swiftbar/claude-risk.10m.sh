@@ -179,6 +179,9 @@ case "$WEBRTC_STATE" in
   odd)       echo "… WebRTC 实测: STUN 映射到内网地址 $STUN_IP (不计分)";;
   *)         echo "… WebRTC 实测: 出口未知无法比对 (不计分)";;
 esac
+KS=0
+[ -f /etc/pf.anchors/claude-killswitch ] && KS=1
+echo "$(tick $KS) 断网保险(kill switch): $([ "$KS" = 1 ] && echo 已启用 || echo 未安装)"
 echo "$(tick $SB_ON) sing-box: $([ "$SB_ON" = 1 ] && echo 运行中 || echo 未运行!)"
 echo "---"
 if [ -f "$REPORT" ]; then
